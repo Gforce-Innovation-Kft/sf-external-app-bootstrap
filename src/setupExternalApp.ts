@@ -59,17 +59,27 @@ interface SaveResult {
   errors?: Array<{ message: string; statusCode: string }>;
 }
 
+/**
+ * The Metadata API returns an array when you pass multiple names but a bare
+ * object when you pass one — unwrap that to always get the single record.
+ */
 function firstOrSelf<T>(result: T | T[]): T {
   // metadata.read/create/update for a single fullName always return at least
   // one element — index 0 is never actually out of bounds here.
   return Array.isArray(result) ? (result[0] as T) : result;
 }
 
+/**
+ * True if `connection.metadata.read` actually found a component named
+ * `fullName` — a miss comes back as a stub object with `fullName: undefined`
+ * rather than throwing or returning null.
+ */
 function exists(record: unknown, fullName: string): boolean {
   const r = record as { fullName?: string } | undefined;
   return Boolean(r && r.fullName === fullName);
 }
 
+/** Throws with the Salesforce-reported error details if a create/update call did not succeed. */
 function assertSaved(result: SaveResult | SaveResult[], type: string): void {
   const r = firstOrSelf(result);
   if (!r.success) {
