@@ -43,8 +43,11 @@ npm run integration:test -- \
 | ------------------ | ---------------------------------------------------------------------------------------------- |
 | `generate:jwt`     | Generates a self-signed RSA keypair (`src/generateKeypair.ts`)                                 |
 | `setup-app`        | Creates/updates the External Client App in an org (`src/cli.ts`)                               |
+| `sync:secret`      | Writes a keypair + org details to GCP Secret Manager (`src/syncGcpSecret.ts`)                  |
 | `test`             | Runs the mocha test suite                                                                      |
 | `typecheck`        | `tsc --noEmit` over `src/`                                                                     |
+| `format`           | `prettier --write .`                                                                           |
+| `format:check`     | `prettier --check .` — also runs in CI and the pre-commit hook                                 |
 | `integration:test` | Runs `scripts/verify-login-container.sh` — verifies JWT login in a disposable Docker container |
 
 ## `generate:jwt` options
@@ -69,6 +72,30 @@ npm run integration:test -- \
 | `--contact-email`               | `gabor.demeter@gforceinnovation.com`                                          |
 | `--permission-set <name>`       | `<app-name>_Preauthorized`                                                    |
 | env `SF_JWT_CERT_PEM`           | if set, sends the certificate as a raw value instead of reading `--cert-file` |
+
+## CI/CD
+
+Two GitHub Actions workflows automate this repo — see `CLAUDE.md` for the full job-by-job rationale.
+
+**`CI`** (`.github/workflows/ci.yml`) runs on every push/PR to `main`: secret scan → format check → typecheck → unit tests. No Salesforce access required.
+
+**`Setup External App`** (`.github/workflows/setup-external-app.yml`) is a `workflow_dispatch` pipeline — the CI equivalent of running the Quick start steps above by hand, plus a credential rotation at the end. Trigger it from the repo's Actions tab, or:
+
+```bash
+gh workflow run setup-external-app.yml \
+  -f org-env=devhub \
+  -f app-name=TestQA \
+  -f preauth-username=user@example.com
+```
+
+| Step          | Does                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `resolve-env` | Maps `org-env` to a GitHub Environment (`devhub`/`integration`/`production`) and its `salesforce-<env>` GCP secret name                                                              |
+| `setup`       | Logs in with the org's existing JWT credential (from GCP Secret Manager over Workload Identity Federation — no static secret in GitHub), generates a fresh keypair, runs `setup-app` |
+| `verify`      | Proves the fresh key logs in, from a throwaway Docker container (`integration:test`)                                                                                                 |
+| `sync-secret` | Runs only if `verify` passed — writes the fresh keypair + consumer key back to GCP Secret Manager as the new credential                                                              |
+
+**One-time setup:** this repo must be listed in `gforce-google-infra`'s WIF `trusted_repositories`, and the GitHub Environments `devhub`/`integration`/`production`/`gcp-secrets-admin` must exist with the `GCP_WORKLOAD_IDENTITY_PROVIDER` repo variable set. Add required reviewers on `production` and `gcp-secrets-admin` if you want a human approval gate before a credential rotation lands.
 
 ## Architecture
 
