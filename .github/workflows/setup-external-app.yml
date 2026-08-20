@@ -14,9 +14,11 @@ name: Setup External App
 #                    on `verify` succeeding first
 #
 # setup and sync-secret need different WIF environment claims, and a GitHub Actions job can
-# only declare one `environment:` — hence separate jobs, with the new private key handed
-# from job 2 onward as a short-retention workflow artifact (never committed, never logged;
-# masked wherever it touches a log line).
+# only declare one `environment:` — hence separate jobs, with the new private key AND the
+# consumer key handed from job 2 onward as a short-retention workflow artifact (never
+# committed, never logged; masked wherever it touches a log line). The consumer key rides in
+# the artifact rather than as a job `outputs:` value because job outputs set from a step
+# running in a `container:` don't reliably reach a dependent job's `needs.*` context.
 
 on:
   workflow_dispatch:
@@ -75,8 +77,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    outputs:
-      consumer-key: ${{ steps.setup-app.outputs.consumer-key }}
     steps:
       - uses: actions/checkout@v4
 
@@ -116,7 +116,7 @@ jobs:
             exit 1
           fi
           echo "::add-mask::$CONSUMER_KEY"
-          echo "consumer-key=$CONSUMER_KEY" >> "$GITHUB_OUTPUT"
+          printf '%s' "$CONSUMER_KEY" > consumer-key.txt
 
       - name: Stage the private key for upload
         # Workspace-relative, not `${{ runner.temp }}`: a container job only
@@ -124,11 +124,19 @@ jobs:
         # the host's `_temp` path doesn't exist in here and `cp` 404s.
         run: cp "$HOME/.sf-jwt/${{ inputs.org-env }}/server.key" server.key
 
-      - name: Upload the new private key (workflow-scoped, 1-day retention)
+      - name: Upload the new key + consumer key (workflow-scoped, 1-day retention)
+        # consumer-key.txt travels in the same artifact as the private key,
+        # not as a job `outputs:` value — job outputs set from a step running
+        # in a `container:` don't reliably reach a dependent job's `needs.*`
+        # context (confirmed empty on a live run despite the step itself
+        # producing a non-empty value); the artifact is the one handoff
+        # mechanism proven to survive the container boundary.
         uses: actions/upload-artifact@v4
         with:
           name: jwt-key-${{ inputs.org-env }}
-          path: server.key
+          path: |
+            server.key
+            consumer-key.txt
           retention-days: 1
 
   verify:
@@ -155,9 +163,12 @@ jobs:
 
       - name: Verify JWT login in a disposable container
         run: |
+          set -euo pipefail
+          CONSUMER_KEY=$(cat "${{ runner.temp }}/jwt-key/consumer-key.txt")
+          echo "::add-mask::$CONSUMER_KEY"
           npm run integration:test -- \
             "${{ inputs.preauth-username }}" \
-            "${{ needs.setup.outputs.consumer-key }}" \
+            "$CONSUMER_KEY" \
             "${{ runner.temp }}/jwt-key"
 
   sync-secret:
@@ -192,9 +203,12 @@ jobs:
 
       - name: Upload the new JWT bundle to GCP Secret Manager
         run: |
+          set -euo pipefail
+          CONSUMER_KEY=$(cat /tmp/jwt-key/consumer-key.txt)
+          echo "::add-mask::$CONSUMER_KEY"
           npm run sync:secret -- \
             --gcp-project-id "${{ env.GCP_PROJECT_ID }}" \
             --gcp-secret-name "${{ needs.resolve-env.outputs.secret-name }}" \
             --username "${{ inputs.preauth-username }}" \
-            --client-id "${{ needs.setup.outputs.consumer-key }}" \
+            --client-id "$CONSUMER_KEY" \
             --key-file /tmp/jwt-key/server.key
