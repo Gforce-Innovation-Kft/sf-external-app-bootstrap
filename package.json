@@ -1,0 +1,25 @@
+{
+  "name": "sf-external-app-bootstrap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Defines and replicates the TestQA External Client App across Salesforce orgs via @salesforce/core.",
+  "type": "commonjs",
+  "scripts": {
+    "setup-app": "tsx src/setupExternalApp.ts",
+    "test": "tsx node_modules/mocha/bin/mocha.js 'test/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@salesforce/core": "^9.1.4"
+  },
+  "devDependencies": {
+    "@salesforce/ts-types": "^3.0.1",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^22.5.0",
+    "@types/sinon": "^17.0.3",
+    "mocha": "^10.7.3",
+    "sinon": "^19.0.2",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
