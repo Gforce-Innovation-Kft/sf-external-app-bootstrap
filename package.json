@@ -5,8 +5,11 @@
   "description": "Defines and replicates the TestQA External Client App across Salesforce orgs via @salesforce/core.",
   "type": "commonjs",
   "scripts": {
-    "setup-app": "tsx src/setupExternalApp.ts",
-    "test": "tsx node_modules/mocha/bin/mocha.js 'test/**/*.test.ts'"
+    "setup-app": "tsx src/cli.ts",
+    "generate:jwt": "tsx src/generateKeypair.ts",
+    "test": "tsx node_modules/mocha/bin/mocha.js 'test/**/*.test.ts'",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "integration:test": "bash scripts/verify-login-container.sh"
   },
   "dependencies": {
     "@salesforce/core": "^9.1.4"

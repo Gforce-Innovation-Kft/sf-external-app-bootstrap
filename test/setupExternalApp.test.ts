@@ -75,6 +75,56 @@ describe('setupExternalApp', () => {
     strictEqual(sobjectCreateStub.callCount, 1); // permission set assignment
   });
 
+  it('defaults label, description, contactEmail, oauthCallbackUrl, and permissionSetName from appName, and accepts a raw certPem', async () => {
+    let globalOauthReadCalls = 0;
+    const createCalls: Array<{ type: string; metadata: Record<string, unknown> }> = [];
+
+    $$.SANDBOX.stub(connection.metadata, 'read').callsFake(async (type: string, names: string | string[]) => {
+      const fullName = Array.isArray(names) ? names[0] : names;
+      if (type === 'ExtlClntAppGlobalOauthSettings') {
+        globalOauthReadCalls += 1;
+        return globalOauthReadCalls === 1
+          ? ({ fullName: undefined } as never)
+          : ({ fullName, consumerKey: 'FAKE_CONSUMER_KEY' } as never);
+      }
+      return { fullName: undefined } as never;
+    });
+    $$.SANDBOX.stub(connection.metadata, 'create').callsFake(async (type: string, metadata: Record<string, unknown>) => {
+      createCalls.push({ type, metadata });
+      return FAKE_SAVE_SUCCESS as never;
+    });
+    $$.SANDBOX.stub(connection.metadata, 'update').resolves(FAKE_SAVE_SUCCESS as never);
+    $$.SANDBOX.stub(connection, 'query').callsFake(async (soql: string) => {
+      if (soql.includes('FROM User')) {
+        return { records: [{ Id: '005000000000001AAA' }], totalSize: 1, done: true } as never;
+      }
+      if (soql.includes('FROM PermissionSet ')) {
+        return { records: [{ Id: '0PS000000000001AAA' }], totalSize: 1, done: true } as never;
+      }
+      return { records: [], totalSize: 0, done: true } as never;
+    });
+    $$.SANDBOX.stub(connection, 'sobject').returns({
+      create: $$.SANDBOX.stub().resolves({ success: true, id: '0Pa000000000001AAA' }),
+    } as never);
+
+    await setupExternalApp(connection, {
+      appName: 'DefaultsApp',
+      preAuthUsername: 'admin@example.com',
+      certPem: '-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n',
+    });
+
+    const appCreate = createCalls.find((c) => c.type === 'ExternalClientApplication');
+    strictEqual(appCreate?.metadata.label, 'DefaultsApp');
+    strictEqual(appCreate?.metadata.contactEmail, 'gabor.demeter@gforceinnovation.com');
+
+    const oauthCreate = createCalls.find((c) => c.type === 'ExtlClntAppGlobalOauthSettings');
+    strictEqual(oauthCreate?.metadata.callbackUrl, 'https://login.salesforce.com/services/oauth2/success');
+    strictEqual(oauthCreate?.metadata.certificate, '-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n');
+
+    const policyCreate = createCalls.find((c) => c.type === 'ExtlClntAppOauthConfigurablePolicies');
+    strictEqual(policyCreate?.metadata.commaSeparatedPermissionSet, 'DefaultsApp_Preauthorized');
+  });
+
   it('throws when the consumer key never resolves', async () => {
     $$.SANDBOX.stub(connection.metadata, 'read').resolves({ fullName: undefined } as never);
     $$.SANDBOX.stub(connection.metadata, 'create').resolves(FAKE_SAVE_SUCCESS as never);

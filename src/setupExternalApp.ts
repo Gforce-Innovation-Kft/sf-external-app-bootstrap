@@ -1,19 +1,54 @@
 import { readFileSync } from 'node:fs';
 import type { Connection } from '@salesforce/core';
 
-export interface SetupExternalAppOptions {
+/**
+ * @salesforce/core's exported `MetadataType` union predates these External
+ * Client App metadata types — the Metadata API accepts them at runtime, so a
+ * narrow cast (derived from the real method signature, not `any`) is needed.
+ */
+type MetadataApiType = Parameters<Connection['metadata']['read']>[0];
+const EXTERNAL_CLIENT_APPLICATION = 'ExternalClientApplication' as unknown as MetadataApiType;
+const EXTL_CLNT_APP_OAUTH_SETTINGS = 'ExtlClntAppOauthSettings' as unknown as MetadataApiType;
+const EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS = 'ExtlClntAppGlobalOauthSettings' as unknown as MetadataApiType;
+const EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES =
+  'ExtlClntAppOauthConfigurablePolicies' as unknown as MetadataApiType;
+
+/** Certificate is supplied as exactly one of a file path or its raw PEM content. */
+export type CertificateInput = { certPemPath: string; certPem?: never } | { certPem: string; certPemPath?: never };
+
+export type SetupExternalAppOptions = {
+  /** The only input without a sensible default — everything else derives from it. */
   appName: string;
-  label: string;
-  description: string;
-  contactEmail: string;
-  certPemPath: string;
+  /** Username to pre-authorize for JWT login; org-specific, no default possible. */
   preAuthUsername: string;
-  permissionSetName: string;
-}
+  /** Defaults to `appName`. */
+  label?: string;
+  /** Defaults to a generic bootstrap description mentioning `appName`. */
+  description?: string;
+  /** Defaults to gabor.demeter@gforceinnovation.com. */
+  contactEmail?: string;
+  /** Defaults to the standard Salesforce login success callback. */
+  oauthCallbackUrl?: string;
+  /** Defaults to `${appName}_Preauthorized`. */
+  permissionSetName?: string;
+} & CertificateInput;
 
 export interface SetupExternalAppResult {
   created: boolean;
   consumerKey: string;
+}
+
+const DEFAULT_CONTACT_EMAIL = 'gabor.demeter@gforceinnovation.com';
+const DEFAULT_OAUTH_CALLBACK_URL = 'https://login.salesforce.com/services/oauth2/success';
+
+function resolveCertificatePem(options: SetupExternalAppOptions): string {
+  if ('certPem' in options && options.certPem !== undefined) {
+    return options.certPem;
+  }
+  if ('certPemPath' in options && options.certPemPath !== undefined) {
+    return readFileSync(options.certPemPath, 'utf8');
+  }
+  throw new Error('Provide either certPem or certPemPath.');
 }
 
 interface SaveResult {
@@ -49,19 +84,16 @@ export async function setupExternalApp(
   connection: Connection,
   options: SetupExternalAppOptions
 ): Promise<SetupExternalAppResult> {
-  const {
-    appName,
-    label,
-    description,
-    contactEmail,
-    certPemPath,
-    preAuthUsername,
-    permissionSetName,
-  } = options;
-  const certificate = readFileSync(certPemPath, 'utf8');
+  const { appName, preAuthUsername } = options;
+  const label = options.label ?? appName;
+  const description = options.description ?? `Bootstrap external client app '${appName}' via @salesforce/core.`;
+  const contactEmail = options.contactEmail ?? DEFAULT_CONTACT_EMAIL;
+  const oauthCallbackUrl = options.oauthCallbackUrl ?? DEFAULT_OAUTH_CALLBACK_URL;
+  const permissionSetName = options.permissionSetName ?? `${appName}_Preauthorized`;
+  const certificate = resolveCertificatePem(options);
 
   const existingApp = firstOrSelf(
-    await connection.metadata.read('ExternalClientApplication', [appName])
+    await connection.metadata.read(EXTERNAL_CLIENT_APPLICATION, [appName])
   );
   const appAlreadyExists = exists(existingApp, appName);
 
@@ -75,13 +107,13 @@ export async function setupExternalApp(
   };
 
   if (appAlreadyExists) {
-    assertSaved(await connection.metadata.update('ExternalClientApplication', appMetadata), 'ExternalClientApplication');
+    assertSaved(await connection.metadata.update(EXTERNAL_CLIENT_APPLICATION, appMetadata), EXTERNAL_CLIENT_APPLICATION);
   } else {
-    assertSaved(await connection.metadata.create('ExternalClientApplication', appMetadata), 'ExternalClientApplication');
+    assertSaved(await connection.metadata.create(EXTERNAL_CLIENT_APPLICATION, appMetadata), EXTERNAL_CLIENT_APPLICATION);
   }
 
   const existingOauthPlugin = firstOrSelf(
-    await connection.metadata.read('ExtlClntAppOauthSettings', [appName])
+    await connection.metadata.read(EXTL_CLNT_APP_OAUTH_SETTINGS, [appName])
   );
   const oauthPluginAlreadyExists = exists(existingOauthPlugin, appName);
 
@@ -94,18 +126,18 @@ export async function setupExternalApp(
 
   if (oauthPluginAlreadyExists) {
     assertSaved(
-      await connection.metadata.update('ExtlClntAppOauthSettings', oauthPluginSettings),
-      'ExtlClntAppOauthSettings'
+      await connection.metadata.update(EXTL_CLNT_APP_OAUTH_SETTINGS, oauthPluginSettings),
+      EXTL_CLNT_APP_OAUTH_SETTINGS
     );
   } else {
     assertSaved(
-      await connection.metadata.create('ExtlClntAppOauthSettings', oauthPluginSettings),
-      'ExtlClntAppOauthSettings'
+      await connection.metadata.create(EXTL_CLNT_APP_OAUTH_SETTINGS, oauthPluginSettings),
+      EXTL_CLNT_APP_OAUTH_SETTINGS
     );
   }
 
   const existingOauth = firstOrSelf(
-    await connection.metadata.read('ExtlClntAppGlobalOauthSettings', [appName])
+    await connection.metadata.read(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, [appName])
   );
   const oauthAlreadyExists = exists(existingOauth, appName);
 
@@ -114,18 +146,18 @@ export async function setupExternalApp(
     externalClientApplication: appName,
     label,
     certificate,
-    callbackUrl: 'https://login.salesforce.com/services/oauth2/success',
+    callbackUrl: oauthCallbackUrl,
   };
 
   if (oauthAlreadyExists) {
     assertSaved(
-      await connection.metadata.update('ExtlClntAppGlobalOauthSettings', oauthSettings),
-      'ExtlClntAppGlobalOauthSettings'
+      await connection.metadata.update(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, oauthSettings),
+      EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS
     );
   } else {
     assertSaved(
-      await connection.metadata.create('ExtlClntAppGlobalOauthSettings', oauthSettings),
-      'ExtlClntAppGlobalOauthSettings'
+      await connection.metadata.create(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, oauthSettings),
+      EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS
     );
   }
 
@@ -173,7 +205,7 @@ export async function setupExternalApp(
   }
 
   const existingPolicy = firstOrSelf(
-    await connection.metadata.read('ExtlClntAppOauthConfigurablePolicies', [appName])
+    await connection.metadata.read(EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES, [appName])
   );
   const policyMetadata = {
     fullName: appName,
@@ -185,18 +217,18 @@ export async function setupExternalApp(
 
   if (exists(existingPolicy, appName)) {
     assertSaved(
-      await connection.metadata.update('ExtlClntAppOauthConfigurablePolicies', policyMetadata),
-      'ExtlClntAppOauthConfigurablePolicies'
+      await connection.metadata.update(EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES, policyMetadata),
+      EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES
     );
   } else {
     assertSaved(
-      await connection.metadata.create('ExtlClntAppOauthConfigurablePolicies', policyMetadata),
-      'ExtlClntAppOauthConfigurablePolicies'
+      await connection.metadata.create(EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES, policyMetadata),
+      EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES
     );
   }
 
   const resolved = firstOrSelf(
-    await connection.metadata.read('ExtlClntAppGlobalOauthSettings', [appName])
+    await connection.metadata.read(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, [appName])
   ) as { consumerKey?: string } | undefined;
 
   if (!resolved?.consumerKey) {

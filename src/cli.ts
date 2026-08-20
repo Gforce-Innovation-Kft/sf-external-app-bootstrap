@@ -1,31 +1,33 @@
 import { getConnection } from './getConnection';
 import { setupExternalApp } from './setupExternalApp';
-
-function arg(name: string, fallback?: string): string {
-  const flag = `--${name}`;
-  const idx = process.argv.indexOf(flag);
-  if (idx !== -1 && process.argv[idx + 1]) {
-    return process.argv[idx + 1];
-  }
-  if (fallback !== undefined) return fallback;
-  throw new Error(`Missing required argument: ${flag}`);
-}
+import { arg, optionalArg } from './cliArgs';
 
 async function main() {
   const org = arg('org');
   const appName = arg('app-name', 'TestQA');
-  const certPath = arg('cert-file', `${process.env.HOME}/.sf-jwt/testqa/server.crt`);
+  const preAuthUsername = arg('preauth-username');
+  const permissionSetName = optionalArg('permission-set');
+  const contactEmail = optionalArg('contact-email');
+  // CI-friendly: a secret manager can inject the PEM directly, skipping the filesystem.
+  const certPem = process.env.SF_JWT_CERT_PEM;
+  const certPath = arg('cert-file', `${process.env.HOME}/.sf-jwt/${appName.toLowerCase()}/server.crt`);
 
   const connection = await getConnection(org);
-  const result = await setupExternalApp(connection, {
-    appName,
-    label: appName,
-    description: 'Bootstrap test app for JWT-based External Client App automation.',
-    contactEmail: arg('contact-email', 'demetergabor94@gmail.com'),
-    certPemPath: certPath,
-    preAuthUsername: arg('preauth-username'),
-    permissionSetName: arg('permission-set', `${appName}_Preauthorized`),
-  });
+  const result = certPem
+    ? await setupExternalApp(connection, {
+        appName,
+        preAuthUsername,
+        ...(permissionSetName ? { permissionSetName } : {}),
+        ...(contactEmail ? { contactEmail } : {}),
+        certPem,
+      })
+    : await setupExternalApp(connection, {
+        appName,
+        preAuthUsername,
+        ...(permissionSetName ? { permissionSetName } : {}),
+        ...(contactEmail ? { contactEmail } : {}),
+        certPemPath: certPath,
+      });
 
   console.log(`${result.created ? 'Created' : 'Updated'} '${appName}' in ${org}`);
   console.log(`consumerKey=${result.consumerKey}`);
