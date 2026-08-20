@@ -4,14 +4,19 @@ name: Setup External App
 #   1. resolve-env — maps the org-env input to a WIF environment claim + GCP secret name
 #   2. setup       - log in via the existing devhub/integration/production JWT credential
 #                    (read-only GCP claim), generate a fresh keypair, create/update the
-#                    External Client App, verify JWT login works in a disposable container
-#   3. sync-secret - write the fresh JWT bundle back to GCP Secret Manager (write-only
-#                    gcp-secrets-admin claim) so it's the credential going forward
+#                    External Client App. Runs in the sf-ci container (needs the `sf` CLI).
+#   3. verify      - prove the fresh key actually logs in, from a throwaway container
+#                    (scripts/verify-login-container.sh). Runs on the bare runner, not
+#                    sf-ci, because this step itself shells out to `docker run` — no
+#                    docker-in-docker access from inside a container job.
+#   4. sync-secret - write the fresh JWT bundle back to GCP Secret Manager (write-only
+#                    gcp-secrets-admin claim) so it's the credential going forward, gated
+#                    on `verify` succeeding first
 #
-# Steps 2 and 3 need different WIF environment claims, and a GitHub Actions job can only
-# declare one `environment:` — hence three jobs instead of one, with the new private key
-# handed from job 2 to job 3 as a short-retention workflow artifact (never committed,
-# never logged; masked wherever it touches a log line).
+# setup and sync-secret need different WIF environment claims, and a GitHub Actions job can
+# only declare one `environment:` — hence separate jobs, with the new private key handed
+# from job 2 onward as a short-retention workflow artifact (never committed, never logged;
+# masked wherever it touches a log line).
 
 on:
   workflow_dispatch:
@@ -58,6 +63,14 @@ jobs:
   setup:
     needs: resolve-env
     runs-on: ubuntu-latest
+    # sf CLI comes from the image, not from npm — rules in sf-docker-images'
+    # docs/using-in-github-actions.md. 3.1.0+ needs no `options:` (defaults to
+    # the runner's own UID 1001); `defaults.run.shell: bash` is required
+    # because container jobs default to `sh`, which has no `-o pipefail`.
+    container: gforceinnovation/sf-ci:3.1.0
+    defaults:
+      run:
+        shell: bash
     environment: ${{ needs.resolve-env.outputs.read-claim }}
     permissions:
       id-token: write
@@ -105,13 +118,6 @@ jobs:
           echo "::add-mask::$CONSUMER_KEY"
           echo "consumer-key=$CONSUMER_KEY" >> "$GITHUB_OUTPUT"
 
-      - name: Verify JWT login in a disposable container
-        run: |
-          npm run integration:test -- \
-            "${{ inputs.preauth-username }}" \
-            "${{ steps.setup-app.outputs.consumer-key }}" \
-            "$HOME/.sf-jwt/${{ inputs.org-env }}"
-
       - name: Stage the private key for upload
         run: cp "$HOME/.sf-jwt/${{ inputs.org-env }}/server.key" "${{ runner.temp }}/server.key"
 
@@ -122,8 +128,39 @@ jobs:
           path: ${{ runner.temp }}/server.key
           retention-days: 1
 
-  sync-secret:
+  verify:
     needs: [resolve-env, setup]
+    runs-on: ubuntu-latest
+    # Bare runner, not the sf-ci container: this step shells out to `docker run`
+    # itself (scripts/verify-login-container.sh) to prove the JWT login works
+    # from a throwaway container — a container job has no docker-in-docker
+    # access to do that from inside the sf-ci image.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jwt-key-${{ inputs.org-env }}
+          path: ${{ runner.temp }}/jwt-key
+
+      - name: Verify JWT login in a disposable container
+        run: |
+          npm run integration:test -- \
+            "${{ inputs.preauth-username }}" \
+            "${{ needs.setup.outputs.consumer-key }}" \
+            "${{ runner.temp }}/jwt-key"
+
+  sync-secret:
+    # Needs `verify`, not just `setup` — the fresh key must prove it can log in
+    # before it overwrites the last known-good credential in GCP.
+    needs: [resolve-env, setup, verify]
     runs-on: ubuntu-latest
     environment: gcp-secrets-admin
     permissions:
