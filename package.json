@@ -7,6 +7,7 @@
   "scripts": {
     "setup-app": "tsx src/cli.ts",
     "generate:jwt": "tsx src/generateKeypair.ts",
+    "sync:secret": "tsx src/syncGcpSecret.ts",
     "test": "tsx node_modules/mocha/bin/mocha.js 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "integration:test": "bash scripts/verify-login-container.sh",
@@ -17,6 +18,7 @@
     "*": "secretlint --secretlintrc .secretlintrc.json"
   },
   "dependencies": {
+    "@google-cloud/secret-manager": "^7.0.0",
     "@salesforce/core": "^9.1.4"
   },
   "devDependencies": {

@@ -1,0 +1,160 @@
+name: Setup External App
+
+# Bootstraps (or rotates) a Salesforce External Client App end-to-end:
+#   1. resolve-env — maps the org-env input to a WIF environment claim + GCP secret name
+#   2. setup       - log in via the existing devhub/integration/production JWT credential
+#                    (read-only GCP claim), generate a fresh keypair, create/update the
+#                    External Client App, verify JWT login works in a disposable container
+#   3. sync-secret - write the fresh JWT bundle back to GCP Secret Manager (write-only
+#                    gcp-secrets-admin claim) so it's the credential going forward
+#
+# Steps 2 and 3 need different WIF environment claims, and a GitHub Actions job can only
+# declare one `environment:` — hence three jobs instead of one, with the new private key
+# handed from job 2 to job 3 as a short-retention workflow artifact (never committed,
+# never logged; masked wherever it touches a log line).
+
+on:
+  workflow_dispatch:
+    inputs:
+      org-env:
+        description: "Target org environment"
+        required: true
+        type: choice
+        options: [devhub, integration, demo-prod]
+        default: devhub
+      app-name:
+        description: "External Client App name"
+        required: true
+        default: TestQA
+      preauth-username:
+        description: "Username to pre-authorize for JWT login"
+        required: true
+
+concurrency:
+  group: setup-external-app-${{ inputs.org-env }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: gforce-salesforce-cicd
+
+jobs:
+  resolve-env:
+    runs-on: ubuntu-latest
+    outputs:
+      read-claim: ${{ steps.map.outputs.read-claim }}
+      secret-name: ${{ steps.map.outputs.secret-name }}
+    steps:
+      - id: map
+        run: |
+          set -euo pipefail
+          case "${{ inputs.org-env }}" in
+            devhub)      echo "read-claim=devhub" >> "$GITHUB_OUTPUT" ;;
+            integration) echo "read-claim=integration" >> "$GITHUB_OUTPUT" ;;
+            demo-prod)   echo "read-claim=production" >> "$GITHUB_OUTPUT" ;;
+            *)           echo "::error::Unknown org-env '${{ inputs.org-env }}'" >&2; exit 1 ;;
+          esac
+          echo "secret-name=salesforce-${{ inputs.org-env }}" >> "$GITHUB_OUTPUT"
+
+  setup:
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.read-claim }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      consumer-key: ${{ steps.setup-app.outputs.consumer-key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Log in to the org (JWT via GCP secret)
+        uses: Gforce-Innovation-Kft/shared-github-actions/.github/actions/sf-org-login@v2
+        with:
+          auth-method: jwt
+          credential-source: gcp
+          gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-project-id: ${{ env.GCP_PROJECT_ID }}
+          gcp-secret-name: ${{ needs.resolve-env.outputs.secret-name }}
+          org-alias: target
+          set-default-dev-hub: ${{ inputs.org-env == 'devhub' }}
+
+      - name: Generate a fresh JWT keypair
+        run: npm run generate:jwt -- --env "${{ inputs.org-env }}" --force
+
+      - name: Setup External Client App
+        id: setup-app
+        run: |
+          set -euo pipefail
+          npm run setup-app -- \
+            --org target \
+            --app-name "${{ inputs.app-name }}" \
+            --preauth-username "${{ inputs.preauth-username }}" \
+            --cert-file "$HOME/.sf-jwt/${{ inputs.org-env }}/server.crt" | tee setup-app.log
+          CONSUMER_KEY=$(sed -n 's/^consumerKey=//p' setup-app.log)
+          if [ -z "$CONSUMER_KEY" ]; then
+            echo "::error::setup-app printed no consumerKey line." >&2
+            exit 1
+          fi
+          echo "::add-mask::$CONSUMER_KEY"
+          echo "consumer-key=$CONSUMER_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Verify JWT login in a disposable container
+        run: |
+          npm run integration:test -- \
+            "${{ inputs.preauth-username }}" \
+            "${{ steps.setup-app.outputs.consumer-key }}" \
+            "$HOME/.sf-jwt/${{ inputs.org-env }}"
+
+      - name: Stage the private key for upload
+        run: cp "$HOME/.sf-jwt/${{ inputs.org-env }}/server.key" "${{ runner.temp }}/server.key"
+
+      - name: Upload the new private key (workflow-scoped, 1-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: jwt-key-${{ inputs.org-env }}
+          path: ${{ runner.temp }}/server.key
+          retention-days: 1
+
+  sync-secret:
+    needs: [resolve-env, setup]
+    runs-on: ubuntu-latest
+    environment: gcp-secrets-admin
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jwt-key-${{ inputs.org-env }}
+          path: /tmp/jwt-key
+
+      - name: Authenticate to Google Cloud (Direct WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Upload the new JWT bundle to GCP Secret Manager
+        run: |
+          npm run sync:secret -- \
+            --gcp-project-id "${{ env.GCP_PROJECT_ID }}" \
+            --gcp-secret-name "${{ needs.resolve-env.outputs.secret-name }}" \
+            --username "${{ inputs.preauth-username }}" \
+            --client-id "${{ needs.setup.outputs.consumer-key }}" \
+            --key-file /tmp/jwt-key/server.key
