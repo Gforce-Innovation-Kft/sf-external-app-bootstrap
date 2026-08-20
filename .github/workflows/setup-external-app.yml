@@ -119,13 +119,16 @@ jobs:
           echo "consumer-key=$CONSUMER_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Stage the private key for upload
-        run: cp "$HOME/.sf-jwt/${{ inputs.org-env }}/server.key" "${{ runner.temp }}/server.key"
+        # Workspace-relative, not `${{ runner.temp }}`: a container job only
+        # bind-mounts `$GITHUB_WORKSPACE` (`/__w/...`) into the container, so
+        # the host's `_temp` path doesn't exist in here and `cp` 404s.
+        run: cp "$HOME/.sf-jwt/${{ inputs.org-env }}/server.key" server.key
 
       - name: Upload the new private key (workflow-scoped, 1-day retention)
         uses: actions/upload-artifact@v4
         with:
           name: jwt-key-${{ inputs.org-env }}
-          path: ${{ runner.temp }}/server.key
+          path: server.key
           retention-days: 1
 
   verify:
