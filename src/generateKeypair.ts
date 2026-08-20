@@ -128,7 +128,9 @@ function main(): void {
     outDir: optionalArg('out-dir'),
     force: flag('force'),
     keySize: keySizeArg ? parseKeySize(keySizeArg) : undefined,
-    validityDays: validityDaysArg ? parsePositiveInt('--validity-days', validityDaysArg) : undefined,
+    validityDays: validityDaysArg
+      ? parsePositiveInt('--validity-days', validityDaysArg)
+      : undefined,
     subject: {
       commonName: optionalArg('common-name'),
       organization: optionalArg('org-name'),

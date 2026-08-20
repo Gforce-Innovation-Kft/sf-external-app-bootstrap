@@ -9,12 +9,14 @@ import type { Connection } from '@salesforce/core';
 type MetadataApiType = Parameters<Connection['metadata']['read']>[0];
 const EXTERNAL_CLIENT_APPLICATION = 'ExternalClientApplication' as unknown as MetadataApiType;
 const EXTL_CLNT_APP_OAUTH_SETTINGS = 'ExtlClntAppOauthSettings' as unknown as MetadataApiType;
-const EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS = 'ExtlClntAppGlobalOauthSettings' as unknown as MetadataApiType;
+const EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS =
+  'ExtlClntAppGlobalOauthSettings' as unknown as MetadataApiType;
 const EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES =
   'ExtlClntAppOauthConfigurablePolicies' as unknown as MetadataApiType;
 
 /** Certificate is supplied as exactly one of a file path or its raw PEM content. */
-export type CertificateInput = { certPemPath: string; certPem?: never } | { certPem: string; certPemPath?: never };
+export type CertificateInput =
+  { certPemPath: string; certPem?: never } | { certPem: string; certPemPath?: never };
 
 export type SetupExternalAppOptions = {
   /** The only input without a sensible default — everything else derives from it. */
@@ -58,7 +60,9 @@ interface SaveResult {
 }
 
 function firstOrSelf<T>(result: T | T[]): T {
-  return Array.isArray(result) ? result[0] : result;
+  // metadata.read/create/update for a single fullName always return at least
+  // one element — index 0 is never actually out of bounds here.
+  return Array.isArray(result) ? (result[0] as T) : result;
 }
 
 function exists(record: unknown, fullName: string): boolean {
@@ -75,6 +79,24 @@ function assertSaved(result: SaveResult | SaveResult[], type: string): void {
 }
 
 /**
+ * Idempotently creates or updates one metadata component: reads it by
+ * `fullName`, then creates it if missing or updates it if present.
+ */
+export async function upsertMetadata(
+  connection: Connection,
+  type: MetadataApiType,
+  metadata: { fullName: string } & Record<string, unknown>
+): Promise<{ alreadyExisted: boolean }> {
+  const existing = firstOrSelf(await connection.metadata.read(type, [metadata.fullName]));
+  const alreadyExisted = exists(existing, metadata.fullName);
+  const save = alreadyExisted
+    ? connection.metadata.update(type, metadata)
+    : connection.metadata.create(type, metadata);
+  assertSaved(await save, String(type));
+  return { alreadyExisted };
+}
+
+/**
  * Idempotently creates or updates the External Client App named `appName`
  * (ExternalClientApplication + ExtlClntAppGlobalOauthSettings, which carries
  * the JWT bearer flow certificate and exposes the auto-generated consumer
@@ -86,16 +108,12 @@ export async function setupExternalApp(
 ): Promise<SetupExternalAppResult> {
   const { appName, preAuthUsername } = options;
   const label = options.label ?? appName;
-  const description = options.description ?? `Bootstrap external client app '${appName}' via @salesforce/core.`;
+  const description =
+    options.description ?? `Bootstrap external client app '${appName}' via @salesforce/core.`;
   const contactEmail = options.contactEmail ?? DEFAULT_CONTACT_EMAIL;
   const oauthCallbackUrl = options.oauthCallbackUrl ?? DEFAULT_OAUTH_CALLBACK_URL;
   const permissionSetName = options.permissionSetName ?? `${appName}_Preauthorized`;
   const certificate = resolveCertificatePem(options);
-
-  const existingApp = firstOrSelf(
-    await connection.metadata.read(EXTERNAL_CLIENT_APPLICATION, [appName])
-  );
-  const appAlreadyExists = exists(existingApp, appName);
 
   const appMetadata = {
     fullName: appName,
@@ -105,17 +123,11 @@ export async function setupExternalApp(
     distributionState: 'Local',
     isProtected: false,
   };
-
-  if (appAlreadyExists) {
-    assertSaved(await connection.metadata.update(EXTERNAL_CLIENT_APPLICATION, appMetadata), EXTERNAL_CLIENT_APPLICATION);
-  } else {
-    assertSaved(await connection.metadata.create(EXTERNAL_CLIENT_APPLICATION, appMetadata), EXTERNAL_CLIENT_APPLICATION);
-  }
-
-  const existingOauthPlugin = firstOrSelf(
-    await connection.metadata.read(EXTL_CLNT_APP_OAUTH_SETTINGS, [appName])
+  const { alreadyExisted: appAlreadyExists } = await upsertMetadata(
+    connection,
+    EXTERNAL_CLIENT_APPLICATION,
+    appMetadata
   );
-  const oauthPluginAlreadyExists = exists(existingOauthPlugin, appName);
 
   const oauthPluginSettings = {
     fullName: appName,
@@ -123,23 +135,7 @@ export async function setupExternalApp(
     label,
     commaSeparatedOauthScopes: 'Api,RefreshToken',
   };
-
-  if (oauthPluginAlreadyExists) {
-    assertSaved(
-      await connection.metadata.update(EXTL_CLNT_APP_OAUTH_SETTINGS, oauthPluginSettings),
-      EXTL_CLNT_APP_OAUTH_SETTINGS
-    );
-  } else {
-    assertSaved(
-      await connection.metadata.create(EXTL_CLNT_APP_OAUTH_SETTINGS, oauthPluginSettings),
-      EXTL_CLNT_APP_OAUTH_SETTINGS
-    );
-  }
-
-  const existingOauth = firstOrSelf(
-    await connection.metadata.read(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, [appName])
-  );
-  const oauthAlreadyExists = exists(existingOauth, appName);
+  await upsertMetadata(connection, EXTL_CLNT_APP_OAUTH_SETTINGS, oauthPluginSettings);
 
   const oauthSettings = {
     fullName: appName,
@@ -148,18 +144,7 @@ export async function setupExternalApp(
     certificate,
     callbackUrl: oauthCallbackUrl,
   };
-
-  if (oauthAlreadyExists) {
-    assertSaved(
-      await connection.metadata.update(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, oauthSettings),
-      EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS
-    );
-  } else {
-    assertSaved(
-      await connection.metadata.create(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, oauthSettings),
-      EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS
-    );
-  }
+  await upsertMetadata(connection, EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, oauthSettings);
 
   const existingPermSet = firstOrSelf(
     await connection.metadata.read('PermissionSet', [permissionSetName])
@@ -204,9 +189,6 @@ export async function setupExternalApp(
     });
   }
 
-  const existingPolicy = firstOrSelf(
-    await connection.metadata.read(EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES, [appName])
-  );
   const policyMetadata = {
     fullName: appName,
     externalClientApplication: appName,
@@ -214,18 +196,7 @@ export async function setupExternalApp(
     permittedUsersPolicyType: 'AdminApprovedPreAuthorized',
     commaSeparatedPermissionSet: permissionSetName,
   };
-
-  if (exists(existingPolicy, appName)) {
-    assertSaved(
-      await connection.metadata.update(EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES, policyMetadata),
-      EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES
-    );
-  } else {
-    assertSaved(
-      await connection.metadata.create(EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES, policyMetadata),
-      EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES
-    );
-  }
+  await upsertMetadata(connection, EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES, policyMetadata);
 
   const resolved = firstOrSelf(
     await connection.metadata.read(EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, [appName])

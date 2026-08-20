@@ -10,7 +10,10 @@ async function main() {
   const contactEmail = optionalArg('contact-email');
   // CI-friendly: a secret manager can inject the PEM directly, skipping the filesystem.
   const certPem = process.env.SF_JWT_CERT_PEM;
-  const certPath = arg('cert-file', `${process.env.HOME}/.sf-jwt/${appName.toLowerCase()}/server.crt`);
+  const certPath = arg(
+    'cert-file',
+    `${process.env.HOME}/.sf-jwt/${appName.toLowerCase()}/server.crt`
+  );
 
   const connection = await getConnection(org);
   const result = certPem

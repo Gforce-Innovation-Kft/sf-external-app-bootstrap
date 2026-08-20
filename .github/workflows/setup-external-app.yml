@@ -24,17 +24,17 @@ on:
   workflow_dispatch:
     inputs:
       org-env:
-        description: "Target org environment"
+        description: 'Target org environment'
         required: true
         type: choice
         options: [devhub, integration, demo-prod]
         default: devhub
       app-name:
-        description: "External Client App name"
+        description: 'External Client App name'
         required: true
         default: TestQA
       preauth-username:
-        description: "Username to pre-authorize for JWT login"
+        description: 'Username to pre-authorize for JWT login'
         required: true
 
 concurrency:

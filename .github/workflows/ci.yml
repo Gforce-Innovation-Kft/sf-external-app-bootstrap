@@ -29,6 +29,9 @@ jobs:
       - name: Check for committed secrets
         run: npm run lint:secrets
 
+      - name: Format check
+        run: npm run format:check
+
       - name: Typecheck
         run: npm run typecheck
 

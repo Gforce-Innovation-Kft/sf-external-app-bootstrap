@@ -16,6 +16,8 @@ npx tsx node_modules/mocha/bin/mocha.js test/generateKeypair.test.ts   # single 
 npm test -- --grep "defaults label"                                   # single test by name
 
 npm run typecheck          # tsc --noEmit, scoped to src/ only (see Gotchas)
+npm run format              # prettier --write .
+npm run format:check        # prettier --check . (also runs in CI and the pre-commit hook via lint-staged)
 
 npm run generate:jwt -- --env <name> [--force] [--key-size 4096|2048] [--out-dir <path>]
 npm run setup-app -- --org <alias> --app-name <name> --preauth-username <user> [--cert-file <path>]
@@ -44,6 +46,6 @@ A `workflow_dispatch` pipeline that runs the whole bootstrap loop against a real
 
 - **The cert path default is derived from `--app-name`, not from `generate:jwt`'s `--env`.** `cli.ts` defaults `--cert-file` to `~/.sf-jwt/<app-name, lowercased>/server.crt`. If you generate a keypair under a different `--env` than the app name, `setup-app` silently uses whatever (possibly stale) cert already sits at the app-name-derived path instead of your new key. Always pass `--cert-file` explicitly unless `--env` and `--app-name` match exactly.
 - **The printed `consumerKey=...` line is a label, not the value.** When passing it as the `client-id` arg to `integration:test`, strip the `consumerKey=` prefix — including it produces a "client identifier invalid" error from Salesforce.
-- **`ExternalClientApplication` / `ExtlClntAppOauthSettings` / `ExtlClntAppGlobalOauthSettings` / `ExtlClntAppOauthConfigurablePolicies` aren't in `@salesforce/core`'s `MetadataType` union yet** (newer API objects, older SDK type defs). `setupExternalApp.ts` casts them once, up top, via a `MetadataApiType` alias derived from the real method signature — reuse those constants rather than adding new raw string literals.
+- **`ExternalClientApplication` / `ExtlClntAppOauthSettings` / `ExtlClntAppGlobalOauthSettings` / `ExtlClntAppOauthConfigurablePolicies` aren't in `@salesforce/core`'s `MetadataType` union yet** (newer API objects, older SDK type defs). `setupExternalApp.ts` casts them once, up top, via a `MetadataApiType` alias derived from the real method signature — reuse those constants rather than adding new raw string literals. Each of these four components follows the same read-then-create-or-update shape, so `setupExternalApp.ts` funnels them through one exported `upsertMetadata(connection, type, metadata)` helper instead of repeating the branch per component — reuse it for any new metadata type added to the chain rather than hand-rolling another if/else.
 - **`npm run typecheck` only covers `src/`** (via `tsconfig.build.json`), not `test/`. The test suite imports `@salesforce/core/testSetup`, a subpath export that classic (`moduleResolution: "node"`) resolution can't see; fixing it properly means migrating to `node16`/`nodenext`, which would force explicit `.js` extensions on every relative import repo-wide — a deliberately deferred, separate migration.
 - **Certificates can be supplied as a path or a raw value** (`certPemPath` XOR `certPem` — a discriminated union, exactly one). `cli.ts` reads `SF_JWT_CERT_PEM` from the environment for the value form, useful when a secret manager injects the PEM directly in CI instead of writing it to disk.

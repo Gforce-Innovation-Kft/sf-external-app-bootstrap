@@ -12,9 +12,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "integration:test": "bash scripts/verify-login-container.sh",
     "lint:secrets": "secretlint --secretlintrc .secretlintrc.json \"**/*\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepare": "husky"
   },
   "lint-staged": {
+    "*.{ts,js,json,md,yml,yaml}": "prettier --write",
     "*": "secretlint --secretlintrc .secretlintrc.json"
   },
   "dependencies": {
@@ -32,6 +35,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "mocha": "^10.7.3",
+    "prettier": "^3.9.6",
     "secretlint": "^13.0.4",
     "sinon": "^19.0.2",
     "ts-node": "^10.9.2",

@@ -39,36 +39,36 @@ npm run integration:test -- \
 
 ## npm scripts
 
-| Script | Does |
-|---|---|
-| `generate:jwt` | Generates a self-signed RSA keypair (`src/generateKeypair.ts`) |
-| `setup-app` | Creates/updates the External Client App in an org (`src/cli.ts`) |
-| `test` | Runs the mocha test suite |
-| `typecheck` | `tsc --noEmit` over `src/` |
+| Script             | Does                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `generate:jwt`     | Generates a self-signed RSA keypair (`src/generateKeypair.ts`)                                 |
+| `setup-app`        | Creates/updates the External Client App in an org (`src/cli.ts`)                               |
+| `test`             | Runs the mocha test suite                                                                      |
+| `typecheck`        | `tsc --noEmit` over `src/`                                                                     |
 | `integration:test` | Runs `scripts/verify-login-container.sh` — verifies JWT login in a disposable Docker container |
 
 ## `generate:jwt` options
 
-| Flag | Default |
-|---|---|
-| `--env <name>` | *(required)* |
-| `--out-dir <path>` | `~/.sf-jwt/<env>` |
-| `--key-size <2048\|4096>` | `4096` |
-| `--validity-days <n>` | `730` |
-| `--force` | overwrite an existing keypair |
+| Flag                                         | Default                                                   |
+| -------------------------------------------- | --------------------------------------------------------- |
+| `--env <name>`                               | _(required)_                                              |
+| `--out-dir <path>`                           | `~/.sf-jwt/<env>`                                         |
+| `--key-size <2048\|4096>`                    | `4096`                                                    |
+| `--validity-days <n>`                        | `730`                                                     |
+| `--force`                                    | overwrite an existing keypair                             |
 | `--common-name` / `--org-name` / `--country` | `<env>.gforceinnovation.com` / `GForce Innovation` / `ES` |
 
 ## `setup-app` options
 
-| Flag | Default |
-|---|---|
-| `--org <alias>` | *(required)* |
-| `--app-name <name>` | `TestQA` |
-| `--preauth-username <username>` | *(required)* — no sensible default, org-specific |
-| `--cert-file <path>` | `~/.sf-jwt/<app-name, lowercased>/server.crt` |
-| `--contact-email` | `gabor.demeter@gforceinnovation.com` |
-| `--permission-set <name>` | `<app-name>_Preauthorized` |
-| env `SF_JWT_CERT_PEM` | if set, sends the certificate as a raw value instead of reading `--cert-file` |
+| Flag                            | Default                                                                       |
+| ------------------------------- | ----------------------------------------------------------------------------- |
+| `--org <alias>`                 | _(required)_                                                                  |
+| `--app-name <name>`             | `TestQA`                                                                      |
+| `--preauth-username <username>` | _(required)_ — no sensible default, org-specific                              |
+| `--cert-file <path>`            | `~/.sf-jwt/<app-name, lowercased>/server.crt`                                 |
+| `--contact-email`               | `gabor.demeter@gforceinnovation.com`                                          |
+| `--permission-set <name>`       | `<app-name>_Preauthorized`                                                    |
+| env `SF_JWT_CERT_PEM`           | if set, sends the certificate as a raw value instead of reading `--cert-file` |
 
 ## Architecture
 

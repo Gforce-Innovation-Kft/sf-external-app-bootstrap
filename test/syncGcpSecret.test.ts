@@ -4,8 +4,12 @@ import { syncGcpSecret } from '../src/syncGcpSecret';
 
 describe('syncGcpSecret', () => {
   it('adds a new version to the resolved secret path and returns its name', async () => {
-    const secretPath = sinon.stub().returns('projects/gforce-salesforce-cicd/secrets/salesforce-devhub');
-    const addSecretVersion = sinon.stub().resolves([{ name: 'projects/.../secrets/salesforce-devhub/versions/7' }]);
+    const secretPath = sinon
+      .stub()
+      .returns('projects/gforce-salesforce-cicd/secrets/salesforce-devhub');
+    const addSecretVersion = sinon
+      .stub()
+      .resolves([{ name: 'projects/.../secrets/salesforce-devhub/versions/7' }]);
 
     const result = await syncGcpSecret(
       {
@@ -22,8 +26,13 @@ describe('syncGcpSecret', () => {
     );
 
     strictEqual(secretPath.calledOnceWith('gforce-salesforce-cicd', 'salesforce-devhub'), true);
-    deepStrictEqual(addSecretVersion.firstCall.args[0].parent, 'projects/gforce-salesforce-cicd/secrets/salesforce-devhub');
-    const payload = JSON.parse((addSecretVersion.firstCall.args[0].payload.data as Buffer).toString('utf8'));
+    deepStrictEqual(
+      addSecretVersion.firstCall.args[0].parent,
+      'projects/gforce-salesforce-cicd/secrets/salesforce-devhub'
+    );
+    const payload = JSON.parse(
+      (addSecretVersion.firstCall.args[0].payload.data as Buffer).toString('utf8')
+    );
     deepStrictEqual(payload, {
       username: 'admin@example.com',
       client_id: 'FAKE_CONSUMER_KEY',
@@ -37,7 +46,9 @@ describe('syncGcpSecret', () => {
   });
 
   it('throws when addSecretVersion returns no version name', async () => {
-    const secretPath = sinon.stub().returns('projects/gforce-salesforce-cicd/secrets/salesforce-devhub');
+    const secretPath = sinon
+      .stub()
+      .returns('projects/gforce-salesforce-cicd/secrets/salesforce-devhub');
     const addSecretVersion = sinon.stub().resolves([{}]);
 
     await syncGcpSecret(
