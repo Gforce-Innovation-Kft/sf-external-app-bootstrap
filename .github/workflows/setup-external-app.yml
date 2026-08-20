@@ -78,11 +78,11 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -131,7 +131,7 @@ jobs:
         # context (confirmed empty on a live run despite the step itself
         # producing a non-empty value); the artifact is the one handoff
         # mechanism proven to survive the container boundary.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jwt-key-${{ inputs.org-env }}
           path: |
@@ -147,16 +147,16 @@ jobs:
     # from a throwaway container — a container job has no docker-in-docker
     # access to do that from inside the sf-ci image.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: jwt-key-${{ inputs.org-env }}
           path: ${{ runner.temp }}/jwt-key
@@ -181,16 +181,16 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: jwt-key-${{ inputs.org-env }}
           path: /tmp/jwt-key
