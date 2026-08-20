@@ -9,17 +9,28 @@
     "generate:jwt": "tsx src/generateKeypair.ts",
     "test": "tsx node_modules/mocha/bin/mocha.js 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
-    "integration:test": "bash scripts/verify-login-container.sh"
+    "integration:test": "bash scripts/verify-login-container.sh",
+    "lint:secrets": "secretlint --secretlintrc .secretlintrc.json \"**/*\"",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*": "secretlint --secretlintrc .secretlintrc.json"
   },
   "dependencies": {
     "@salesforce/core": "^9.1.4"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "@salesforce/ts-types": "^3.0.1",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
     "@types/mocha": "^10.0.7",
     "@types/node": "^22.5.0",
     "@types/sinon": "^17.0.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "mocha": "^10.7.3",
+    "secretlint": "^13.0.4",
     "sinon": "^19.0.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.0",

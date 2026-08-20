@@ -39,6 +39,7 @@ const DEFAULT_VALIDITY_DAYS = 730;
 const DEFAULT_ORGANIZATION = 'GForce Innovation';
 const DEFAULT_COUNTRY = 'ES';
 
+/** Parses a CLI `--key-size` value, throwing if it isn't one of `ALLOWED_KEY_SIZES`. */
 export function parseKeySize(value: string): RsaKeySize {
   const parsed = Number(value);
   if (!ALLOWED_KEY_SIZES.includes(parsed as RsaKeySize)) {
