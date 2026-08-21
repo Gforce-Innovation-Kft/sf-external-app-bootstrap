@@ -1,22 +1,19 @@
-import { readFileSync } from 'node:fs';
 import type { Connection } from '@salesforce/core';
+import { type CertificateInput, resolveCertificatePem } from './certificateInput';
+import { ensurePreAuthPermissionSet } from './ensurePreAuthPermissionSet';
+import { firstOrSelf, type MetadataApiType, upsertMetadata } from './metadataUpsert';
 
 /**
  * @salesforce/core's exported `MetadataType` union predates these External
  * Client App metadata types — the Metadata API accepts them at runtime, so a
  * narrow cast (derived from the real method signature, not `any`) is needed.
  */
-type MetadataApiType = Parameters<Connection['metadata']['read']>[0];
 const EXTERNAL_CLIENT_APPLICATION = 'ExternalClientApplication' as unknown as MetadataApiType;
 const EXTL_CLNT_APP_OAUTH_SETTINGS = 'ExtlClntAppOauthSettings' as unknown as MetadataApiType;
 const EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS =
   'ExtlClntAppGlobalOauthSettings' as unknown as MetadataApiType;
 const EXTL_CLNT_APP_OAUTH_CONFIGURABLE_POLICIES =
   'ExtlClntAppOauthConfigurablePolicies' as unknown as MetadataApiType;
-
-/** Certificate is supplied as exactly one of a file path or its raw PEM content. */
-export type CertificateInput =
-  { certPemPath: string; certPem?: never } | { certPem: string; certPemPath?: never };
 
 export type SetupExternalAppOptions = {
   /** The only input without a sensible default — everything else derives from it. */
@@ -42,69 +39,6 @@ export interface SetupExternalAppResult {
 
 const DEFAULT_CONTACT_EMAIL = 'gabor.demeter@gforceinnovation.com';
 const DEFAULT_OAUTH_CALLBACK_URL = 'https://login.salesforce.com/services/oauth2/success';
-
-function resolveCertificatePem(options: SetupExternalAppOptions): string {
-  if ('certPem' in options && options.certPem !== undefined) {
-    return options.certPem;
-  }
-  if ('certPemPath' in options && options.certPemPath !== undefined) {
-    return readFileSync(options.certPemPath, 'utf8');
-  }
-  throw new Error('Provide either certPem or certPemPath.');
-}
-
-interface SaveResult {
-  success: boolean;
-  fullName: string;
-  errors?: Array<{ message: string; statusCode: string }>;
-}
-
-/**
- * The Metadata API returns an array when you pass multiple names but a bare
- * object when you pass one — unwrap that to always get the single record.
- */
-function firstOrSelf<T>(result: T | T[]): T {
-  // metadata.read/create/update for a single fullName always return at least
-  // one element — index 0 is never actually out of bounds here.
-  return Array.isArray(result) ? (result[0] as T) : result;
-}
-
-/**
- * True if `connection.metadata.read` actually found a component named
- * `fullName` — a miss comes back as a stub object with `fullName: undefined`
- * rather than throwing or returning null.
- */
-function exists(record: unknown, fullName: string): boolean {
-  const r = record as { fullName?: string } | undefined;
-  return Boolean(r && r.fullName === fullName);
-}
-
-/** Throws with the Salesforce-reported error details if a create/update call did not succeed. */
-function assertSaved(result: SaveResult | SaveResult[], type: string): void {
-  const r = firstOrSelf(result);
-  if (!r.success) {
-    const messages = (r.errors ?? []).map((e) => `${e.statusCode}: ${e.message}`).join('; ');
-    throw new Error(`${type} save failed for '${r.fullName}': ${messages || 'unknown error'}`);
-  }
-}
-
-/**
- * Idempotently creates or updates one metadata component: reads it by
- * `fullName`, then creates it if missing or updates it if present.
- */
-export async function upsertMetadata(
-  connection: Connection,
-  type: MetadataApiType,
-  metadata: { fullName: string } & Record<string, unknown>
-): Promise<{ alreadyExisted: boolean }> {
-  const existing = firstOrSelf(await connection.metadata.read(type, [metadata.fullName]));
-  const alreadyExisted = exists(existing, metadata.fullName);
-  const save = alreadyExisted
-    ? connection.metadata.update(type, metadata)
-    : connection.metadata.create(type, metadata);
-  assertSaved(await save, String(type));
-  return { alreadyExisted };
-}
 
 /**
  * Idempotently creates or updates the External Client App named `appName`
@@ -156,48 +90,11 @@ export async function setupExternalApp(
   };
   await upsertMetadata(connection, EXTL_CLNT_APP_GLOBAL_OAUTH_SETTINGS, oauthSettings);
 
-  const existingPermSet = firstOrSelf(
-    await connection.metadata.read('PermissionSet', [permissionSetName])
-  );
-  if (!exists(existingPermSet, permissionSetName)) {
-    assertSaved(
-      await connection.metadata.create('PermissionSet', {
-        fullName: permissionSetName,
-        label: permissionSetName,
-        description: `Pre-authorizes JWT bearer login to the ${appName} external client app.`,
-      }),
-      'PermissionSet'
-    );
-  }
-
-  const preAuthUserId = (
-    await connection.query<{ Id: string }>(
-      `SELECT Id FROM User WHERE Username = '${preAuthUsername}'`
-    )
-  ).records[0]?.Id;
-  if (!preAuthUserId) {
-    throw new Error(`No user found with username '${preAuthUsername}'.`);
-  }
-
-  const permSetId = (
-    await connection.query<{ Id: string }>(
-      `SELECT Id FROM PermissionSet WHERE Name = '${permissionSetName}'`
-    )
-  ).records[0]?.Id;
-  if (!permSetId) {
-    throw new Error(`PermissionSet '${permissionSetName}' was created but is not queryable yet.`);
-  }
-
-  const alreadyAssigned = await connection.query<{ Id: string }>(
-    `SELECT Id FROM PermissionSetAssignment WHERE AssigneeId = '${preAuthUserId}' ` +
-      `AND PermissionSetId = '${permSetId}'`
-  );
-  if (alreadyAssigned.totalSize === 0) {
-    await connection.sobject('PermissionSetAssignment').create({
-      AssigneeId: preAuthUserId,
-      PermissionSetId: permSetId,
-    });
-  }
+  await ensurePreAuthPermissionSet(connection, {
+    permissionSetName,
+    description: `Pre-authorizes JWT bearer login to the ${appName} external client app.`,
+    preAuthUsername,
+  });
 
   const policyMetadata = {
     fullName: appName,

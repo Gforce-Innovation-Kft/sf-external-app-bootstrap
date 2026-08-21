@@ -6,11 +6,13 @@
   "type": "commonjs",
   "scripts": {
     "setup-app": "tsx src/cli.ts",
+    "setup-connected-app": "tsx src/cliConnectedApp.ts",
     "generate:jwt": "tsx src/generateKeypair.ts",
     "sync:secret": "tsx src/syncGcpSecret.ts",
     "test": "tsx node_modules/mocha/bin/mocha.js 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "integration:test": "bash scripts/verify-login-container.sh",
+    "integration:test:scratch-org": "bash scripts/verify-scratch-org-container.sh",
     "lint:secrets": "secretlint --secretlintrc .secretlintrc.json \"**/*\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

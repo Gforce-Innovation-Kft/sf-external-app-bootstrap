@@ -1,0 +1,189 @@
+name: Setup Connected App (Dev Hub)
+
+# Extension, not a replacement: creates/rotates a classic Connected App (JWT
+# bearer flow) against the devhub org, alongside — not instead of — the
+# External Client App this repo already manages via setup-external-app.yml.
+#
+# Why a separate app/workflow: Dev Hub scratch-org creation
+# (`sf org create scratch`) only recognizes a classic Connected App as the
+# OAuth client; External Client Apps aren't supported for that operation yet.
+# This workflow never touches the existing `salesforce-devhub` secret or the
+# External Client App it holds — it reads that secret (read-only) purely to
+# authenticate the metadata-setup call, and writes its own output to a new,
+# separate secret.
+#
+#   1. setup       - log in to devhub with the existing JWT credential (read-only
+#                    GCP claim), generate a fresh keypair under its own --env so
+#                    it never collides with the ECA's keypair, create/update the
+#                    Connected App. Runs in the sf-ci container (needs `sf`).
+#   2. verify      - prove the fresh key can both log in AND create (then delete)
+#                    a real scratch org — the actual capability being fixed —
+#                    from a throwaway container (scripts/verify-scratch-org-container.sh).
+#                    Runs on the bare runner, not sf-ci, because this step itself
+#                    shells out to `docker run`.
+#   3. sync-secret - write the fresh JWT bundle to a NEW secret,
+#                    salesforce-devhub-connected-app (write-only
+#                    gcp-secrets-admin claim), gated on `verify` succeeding first.
+#                    salesforce-devhub itself is never written to.
+#
+# One-time prerequisite: the salesforce-devhub-connected-app secret container
+# must already exist in gforce-google-infra before this workflow's first run —
+# sync:secret (src/syncGcpSecret.ts) only adds versions to an existing secret,
+# by design (see CLAUDE.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      app-name:
+        description: 'Connected App name'
+        required: true
+        default: TestQA-ScratchOrgAccess
+      preauth-username:
+        description: 'Username to pre-authorize for JWT login'
+        required: true
+
+concurrency:
+  group: setup-connected-app-devhub
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: gforce-salesforce-cicd
+  KEYPAIR_ENV: devhub-connected-app
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    # sf CLI comes from the image, not from npm — see setup-external-app.yml.
+    container: gforceinnovation/sf-ci:3.1.0
+    defaults:
+      run:
+        shell: bash
+    environment: devhub
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Log in to the Dev Hub (JWT via GCP secret, read-only)
+        uses: Gforce-Innovation-Kft/shared-github-actions/.github/actions/sf-org-login@v2
+        with:
+          auth-method: jwt
+          credential-source: gcp
+          gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-project-id: ${{ env.GCP_PROJECT_ID }}
+          gcp-secret-name: salesforce-devhub
+          org-alias: target
+          set-default-dev-hub: true
+
+      - name: Generate a fresh JWT keypair for the Connected App
+        run: npm run generate:jwt -- --env "${{ env.KEYPAIR_ENV }}" --force
+
+      - name: Setup Connected App
+        id: setup-app
+        run: |
+          set -euo pipefail
+          npm run setup-connected-app -- \
+            --org target \
+            --app-name "${{ inputs.app-name }}" \
+            --preauth-username "${{ inputs.preauth-username }}" \
+            --cert-file "$HOME/.sf-jwt/${{ env.KEYPAIR_ENV }}/server.crt" | tee setup-app.log
+          CONSUMER_KEY=$(sed -n 's/^consumerKey=//p' setup-app.log)
+          if [ -z "$CONSUMER_KEY" ]; then
+            echo "::error::setup-connected-app printed no consumerKey line." >&2
+            exit 1
+          fi
+          echo "::add-mask::$CONSUMER_KEY"
+          printf '%s' "$CONSUMER_KEY" > consumer-key.txt
+
+      - name: Stage the private key for upload
+        # Workspace-relative, not `${{ runner.temp }}` — see setup-external-app.yml.
+        run: cp "$HOME/.sf-jwt/${{ env.KEYPAIR_ENV }}/server.key" server.key
+
+      - name: Upload the new key + consumer key (workflow-scoped, 1-day retention)
+        uses: actions/upload-artifact@v7
+        with:
+          name: jwt-key-devhub-connected-app
+          path: |
+            server.key
+            consumer-key.txt
+          retention-days: 1
+
+  verify:
+    needs: setup
+    runs-on: ubuntu-latest
+    # Bare runner, not the sf-ci container — this step shells out to `docker
+    # run` itself, same reasoning as setup-external-app.yml's verify job.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: jwt-key-devhub-connected-app
+          path: ${{ runner.temp }}/jwt-key
+
+      - name: Verify JWT login AND scratch-org creation in a disposable container
+        run: |
+          set -euo pipefail
+          CONSUMER_KEY=$(cat "${{ runner.temp }}/jwt-key/consumer-key.txt")
+          echo "::add-mask::$CONSUMER_KEY"
+          npm run integration:test:scratch-org -- \
+            "${{ inputs.preauth-username }}" \
+            "$CONSUMER_KEY" \
+            "${{ runner.temp }}/jwt-key"
+
+  sync-secret:
+    # Needs `verify`, not just `setup` — the fresh key must prove it can log
+    # in AND create a scratch org before it becomes the stored credential.
+    needs: [setup, verify]
+    runs-on: ubuntu-latest
+    environment: gcp-secrets-admin
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: jwt-key-devhub-connected-app
+          path: /tmp/jwt-key
+
+      - name: Authenticate to Google Cloud (Direct WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Upload the new JWT bundle to a NEW secret (salesforce-devhub is untouched)
+        run: |
+          set -euo pipefail
+          CONSUMER_KEY=$(cat /tmp/jwt-key/consumer-key.txt)
+          echo "::add-mask::$CONSUMER_KEY"
+          npm run sync:secret -- \
+            --gcp-project-id "${{ env.GCP_PROJECT_ID }}" \
+            --gcp-secret-name salesforce-devhub-connected-app \
+            --username "${{ inputs.preauth-username }}" \
+            --client-id "$CONSUMER_KEY" \
+            --key-file /tmp/jwt-key/server.key
