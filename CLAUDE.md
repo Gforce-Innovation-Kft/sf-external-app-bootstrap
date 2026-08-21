@@ -14,7 +14,7 @@ This repo spans three distinct domains — invoke the matching skill instead of 
 
 - **Salesforce / Apex / Metadata API** (the `*App.ts` pipelines, permission sets, org auth, anything touching `@salesforce/core`) → `fullstack-dev-skills:salesforce-developer`
 - **TypeScript type design** (the `SetupExternalAppOptions`/`SetupConnectedAppOptions` option shapes, the `MetadataApiType` casts in `metadataUpsert.ts`, discriminated unions like `CertificateInput`) → `fullstack-dev-skills:typescript-pro`
-- **`.github/workflows/*.yml`** (the WIF logins, container jobs, artifact handoffs between jobs) → `ci-cd` for authoring or debugging a pipeline, `actions` for checking a run's status/logs
+- **`.github/workflows/*.yml`** (the WIF logins, container jobs, artifact handoffs between jobs) → `ci-cd`
 
 ## Commands
 
