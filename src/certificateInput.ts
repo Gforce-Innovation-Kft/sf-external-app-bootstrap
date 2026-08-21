@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 export type CertificateInput =
   { certPemPath: string; certPem?: never } | { certPem: string; certPemPath?: never };
 
+/** Returns the PEM content directly, or reads it from `certPemPath` if that's what was supplied. */
 export function resolveCertificatePem(options: CertificateInput): string {
   if ('certPem' in options && options.certPem !== undefined) {
     return options.certPem;

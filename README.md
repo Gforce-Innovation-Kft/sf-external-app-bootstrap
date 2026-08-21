@@ -4,6 +4,15 @@ Bootstraps a Salesforce **External Client App** (JWT bearer flow) consistently a
 
 It also bootstraps a classic **Connected App** for the same JWT flow — see [Connected App (for Dev Hub scratch orgs)](#connected-app-for-dev-hub-scratch-orgs) for why that's a separate app type, not a duplicate.
 
+## Use cases
+
+- **Bootstrap a new integration user in a sandbox or dev org.** `generate:jwt` + `setup-app` stands up an External Client App and pre-authorizes a service account in one command instead of clicking through Setup.
+- **Replicate the same app definition across environments.** Run the same `setup-app` command against `demo-integration`, then `demo-prod` — one source of truth, no manual re-clicking per org, and re-running is always safe (everything is create-or-update).
+- **Rotate a certificate before it expires, or after a suspected leak.** Regenerate the keypair under the same `--env`/`--app-name`, rerun `setup-app --cert-file <new-cert>` — the update path picks up the new certificate without deleting and recreating the app.
+- **Unblock Dev Hub scratch-org creation.** If `sf org create scratch` fails against a Dev Hub whose JWT credential is an External Client App, bootstrap a companion classic Connected App with `setup-connected-app` instead — see [Connected App (for Dev Hub scratch orgs)](#connected-app-for-dev-hub-scratch-orgs).
+- **Add a web-session scope for a browser-based OAuth flow.** Pass `--oauth-scopes Api,RefreshToken,Web` when the integration also needs Visualforce/Experience Cloud session access, not just API calls.
+- **Automate credential rotation on a schedule instead of doing it by hand.** Trigger `setup-external-app.yml` / `setup-connected-app.yml` via `workflow_dispatch` (or add a `schedule:` trigger) to regenerate keys and sync them to GCP Secret Manager without touching the org UI — see [CI/CD](#cicd).
+
 ## Prerequisites
 
 - Node.js (see `package.json` engines / your version manager)

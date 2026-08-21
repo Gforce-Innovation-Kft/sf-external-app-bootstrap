@@ -2,6 +2,7 @@ import { getConnection } from './getConnection';
 import { setupConnectedApp } from './setupConnectedApp';
 import { arg, optionalArg } from './cliArgs';
 
+/** `npm run setup-connected-app` entry point — bootstraps a classic Connected App in one org. See README's `setup-connected-app` options table for flags. */
 async function main() {
   const org = arg('org');
   const appName = arg('app-name', 'TestQA');

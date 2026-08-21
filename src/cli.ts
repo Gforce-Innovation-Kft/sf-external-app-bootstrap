@@ -2,6 +2,7 @@ import { getConnection } from './getConnection';
 import { setupExternalApp } from './setupExternalApp';
 import { arg, optionalArg } from './cliArgs';
 
+/** `npm run setup-app` entry point — bootstraps an External Client App in one org. See README's `setup-app` options table for flags. */
 async function main() {
   const org = arg('org');
   const appName = arg('app-name', 'TestQA');
