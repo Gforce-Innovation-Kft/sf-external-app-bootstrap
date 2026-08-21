@@ -22,8 +22,8 @@ npm run format              # prettier --write .
 npm run format:check        # prettier --check . (also runs in CI and the pre-commit hook via lint-staged)
 
 npm run generate:jwt -- --env <name> [--force] [--key-size 4096|2048] [--out-dir <path>]
-npm run setup-app -- --org <alias> --app-name <name> --preauth-username <user> [--cert-file <path>]
-npm run setup-connected-app -- --org <alias> --app-name <name> --preauth-username <user> [--cert-file <path>]
+npm run setup-app -- --org <alias> --app-name <name> --preauth-username <user> [--cert-file <path>] [--oauth-scopes Api,RefreshToken,Web]
+npm run setup-connected-app -- --org <alias> --app-name <name> --preauth-username <user> [--cert-file <path>] [--oauth-scopes Api,RefreshToken,Web]
 npm run integration:test -- <username> <client-id> <key-dir> [instance-url]
 npm run integration:test:scratch-org -- <username> <client-id> <key-dir> [instance-url]
 npm run sync:secret -- --gcp-project-id <id> --gcp-secret-name <name> --username <u> --client-id <id> --key-file <path>
@@ -63,3 +63,4 @@ The Connected App equivalent, devhub-only (no `resolve-env` job — there's only
 - **Dev Hub scratch-org creation needs a classic Connected App, not an External Client App.** `sf org create scratch` only recognizes a classic Connected App as the Dev Hub's OAuth client — ECAs aren't supported for that operation (as of API 65.0 / current `sf` CLI). This is why `setupConnectedApp.ts` exists as a second, independent pipeline rather than folding into `setupExternalApp.ts`: don't try to make the ECA "just work" for scratch orgs, and don't merge the two into one metadata type — they're genuinely different Metadata API objects with different shapes.
 - **`npm run typecheck` only covers `src/`** (via `tsconfig.build.json`), not `test/`. The test suite imports `@salesforce/core/testSetup`, a subpath export that classic (`moduleResolution: "node"`) resolution can't see; fixing it properly means migrating to `node16`/`nodenext`, which would force explicit `.js` extensions on every relative import repo-wide — a deliberately deferred, separate migration.
 - **Certificates can be supplied as a path or a raw value** (`certPemPath` XOR `certPem` — a discriminated union, exactly one). `cli.ts` reads `SF_JWT_CERT_PEM` from the environment for the value form, useful when a secret manager injects the PEM directly in CI instead of writing it to disk.
+- **OAuth scopes default to `Api,RefreshToken` but are configurable** via `oauthScopes` (`--oauth-scopes a,b,c` on both CLIs). Add `Web` when the integration needs a web session rather than pure API access. The two pipelines store this differently: `setupExternalApp.ts` joins it into `ExtlClntAppOauthSettings.commaSeparatedOauthScopes` (a comma-separated string); `setupConnectedApp.ts` passes it straight through as `ConnectedApp.oauthConfig.scopes` (a string array) — don't assume the shapes match when touching either.

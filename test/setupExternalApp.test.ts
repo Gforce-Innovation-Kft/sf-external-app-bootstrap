@@ -138,8 +138,58 @@ describe('setupExternalApp', () => {
       '-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n'
     );
 
+    const oauthPluginCreate = createCalls.find((c) => c.type === 'ExtlClntAppOauthSettings');
+    strictEqual(oauthPluginCreate?.metadata.commaSeparatedOauthScopes, 'Api,RefreshToken');
+
     const policyCreate = createCalls.find((c) => c.type === 'ExtlClntAppOauthConfigurablePolicies');
     strictEqual(policyCreate?.metadata.commaSeparatedPermissionSet, 'DefaultsApp_Preauthorized');
+  });
+
+  it('uses a custom oauth scope list when provided', async () => {
+    const createCalls: Array<{ type: string; metadata: Record<string, unknown> }> = [];
+    let globalOauthReadCalls = 0;
+
+    $$.SANDBOX.stub(connection.metadata, 'read').callsFake(
+      async (type: string, names: string | string[]) => {
+        const fullName = Array.isArray(names) ? names[0] : names;
+        if (type === 'ExtlClntAppGlobalOauthSettings') {
+          globalOauthReadCalls += 1;
+          return globalOauthReadCalls === 1
+            ? ({ fullName: undefined } as never)
+            : ({ fullName, consumerKey: 'FAKE_CONSUMER_KEY' } as never);
+        }
+        return { fullName: undefined } as never;
+      }
+    );
+    $$.SANDBOX.stub(connection.metadata, 'create').callsFake(
+      async (type: string, metadata: Record<string, unknown>) => {
+        createCalls.push({ type, metadata });
+        return FAKE_SAVE_SUCCESS as never;
+      }
+    );
+    $$.SANDBOX.stub(connection.metadata, 'update').resolves(FAKE_SAVE_SUCCESS as never);
+    $$.SANDBOX.stub(connection, 'query').callsFake(async (soql: string) => {
+      if (soql.includes('FROM User')) {
+        return { records: [{ Id: '005000000000001AAA' }], totalSize: 1, done: true } as never;
+      }
+      if (soql.includes('FROM PermissionSet ')) {
+        return { records: [{ Id: '0PS000000000001AAA' }], totalSize: 1, done: true } as never;
+      }
+      return { records: [], totalSize: 0, done: true } as never;
+    });
+    $$.SANDBOX.stub(connection, 'sobject').returns({
+      create: $$.SANDBOX.stub().resolves({ success: true, id: '0Pa000000000001AAA' }),
+    } as never);
+
+    await setupExternalApp(connection, {
+      appName: 'WebScopeApp',
+      preAuthUsername: 'admin@example.com',
+      certPem: '-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n',
+      oauthScopes: ['Api', 'RefreshToken', 'Web'],
+    });
+
+    const oauthPluginCreate = createCalls.find((c) => c.type === 'ExtlClntAppOauthSettings');
+    strictEqual(oauthPluginCreate?.metadata.commaSeparatedOauthScopes, 'Api,RefreshToken,Web');
   });
 
   it('throws when the consumer key never resolves', async () => {

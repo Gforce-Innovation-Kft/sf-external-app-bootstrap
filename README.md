@@ -91,19 +91,20 @@ This is purely additive: it never touches an existing External Client App, its s
 
 ## `setup-app` options
 
-| Flag                            | Default                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------- |
-| `--org <alias>`                 | _(required)_                                                                  |
-| `--app-name <name>`             | `TestQA`                                                                      |
-| `--preauth-username <username>` | _(required)_ — no sensible default, org-specific                              |
-| `--cert-file <path>`            | `~/.sf-jwt/<app-name, lowercased>/server.crt`                                 |
-| `--contact-email`               | `gabor.demeter@gforceinnovation.com`                                          |
-| `--permission-set <name>`       | `<app-name>_Preauthorized`                                                    |
-| env `SF_JWT_CERT_PEM`           | if set, sends the certificate as a raw value instead of reading `--cert-file` |
+| Flag                            | Default                                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------------------- |
+| `--org <alias>`                 | _(required)_                                                                                 |
+| `--app-name <name>`             | `TestQA`                                                                                     |
+| `--preauth-username <username>` | _(required)_ — no sensible default, org-specific                                             |
+| `--cert-file <path>`            | `~/.sf-jwt/<app-name, lowercased>/server.crt`                                                |
+| `--contact-email`               | `gabor.demeter@gforceinnovation.com`                                                         |
+| `--permission-set <name>`       | `<app-name>_Preauthorized`                                                                   |
+| `--oauth-scopes <a,b,c>`        | `Api,RefreshToken` — add `Web` when the integration needs a web session, not just API access |
+| env `SF_JWT_CERT_PEM`           | if set, sends the certificate as a raw value instead of reading `--cert-file`                |
 
 ## `setup-connected-app` options
 
-Same flags as `setup-app` (above) — `--org`, `--app-name`, `--preauth-username`, `--cert-file`, `--contact-email`, `--permission-set`, env `SF_JWT_CERT_PEM` — pointed at `src/cliConnectedApp.ts` instead.
+Same flags as `setup-app` (above) — `--org`, `--app-name`, `--preauth-username`, `--cert-file`, `--contact-email`, `--permission-set`, `--oauth-scopes`, env `SF_JWT_CERT_PEM` — pointed at `src/cliConnectedApp.ts` instead.
 
 ## CI/CD
 

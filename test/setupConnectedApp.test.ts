@@ -139,6 +139,54 @@ describe('setupConnectedApp', () => {
     deepStrictEqual(oauthConfig?.scopes, ['Api', 'RefreshToken']);
   });
 
+  it('uses a custom oauth scope list when provided', async () => {
+    const createCalls: Array<{ type: string; metadata: Record<string, unknown> }> = [];
+    let connectedAppReadCalls = 0;
+
+    $$.SANDBOX.stub(connection.metadata, 'read').callsFake(
+      async (type: string, names: string | string[]) => {
+        const fullName = Array.isArray(names) ? names[0] : names;
+        if (type === 'ConnectedApp') {
+          connectedAppReadCalls += 1;
+          return connectedAppReadCalls === 1
+            ? ({ fullName: undefined } as never)
+            : ({ fullName, oauthConfig: { consumerKey: 'FAKE_CONSUMER_KEY' } } as never);
+        }
+        return { fullName: undefined } as never;
+      }
+    );
+    $$.SANDBOX.stub(connection.metadata, 'create').callsFake(
+      async (type: string, metadata: Record<string, unknown>) => {
+        createCalls.push({ type, metadata });
+        return FAKE_SAVE_SUCCESS as never;
+      }
+    );
+    $$.SANDBOX.stub(connection.metadata, 'update').resolves(FAKE_SAVE_SUCCESS as never);
+    $$.SANDBOX.stub(connection, 'query').callsFake(async (soql: string) => {
+      if (soql.includes('FROM User')) {
+        return { records: [{ Id: '005000000000001AAA' }], totalSize: 1, done: true } as never;
+      }
+      if (soql.includes('FROM PermissionSet ')) {
+        return { records: [{ Id: '0PS000000000001AAA' }], totalSize: 1, done: true } as never;
+      }
+      return { records: [], totalSize: 0, done: true } as never;
+    });
+    $$.SANDBOX.stub(connection, 'sobject').returns({
+      create: $$.SANDBOX.stub().resolves({ success: true, id: '0Pa000000000001AAA' }),
+    } as never);
+
+    await setupConnectedApp(connection, {
+      appName: 'WebScopeApp',
+      preAuthUsername: 'admin@example.com',
+      certPem: '-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n',
+      oauthScopes: ['Api', 'RefreshToken', 'Web'],
+    });
+
+    const appCreate = createCalls.find((c) => c.type === 'ConnectedApp');
+    const oauthConfig = appCreate?.metadata.oauthConfig as Record<string, unknown> | undefined;
+    deepStrictEqual(oauthConfig?.scopes, ['Api', 'RefreshToken', 'Web']);
+  });
+
   it('throws when the consumer key never resolves', async () => {
     $$.SANDBOX.stub(connection.metadata, 'read').resolves({ fullName: undefined } as never);
     $$.SANDBOX.stub(connection.metadata, 'create').resolves(FAKE_SAVE_SUCCESS as never);

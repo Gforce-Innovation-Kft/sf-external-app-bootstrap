@@ -30,6 +30,8 @@ export type SetupExternalAppOptions = {
   oauthCallbackUrl?: string;
   /** Defaults to `${appName}_Preauthorized`. */
   permissionSetName?: string;
+  /** Defaults to `['Api', 'RefreshToken']`. Add `'Web'` when the integration needs a web session, not just API access. */
+  oauthScopes?: string[];
 } & CertificateInput;
 
 export interface SetupExternalAppResult {
@@ -39,6 +41,7 @@ export interface SetupExternalAppResult {
 
 const DEFAULT_CONTACT_EMAIL = 'gabor.demeter@gforceinnovation.com';
 const DEFAULT_OAUTH_CALLBACK_URL = 'https://login.salesforce.com/services/oauth2/success';
+const DEFAULT_OAUTH_SCOPES = ['Api', 'RefreshToken'];
 
 /**
  * Idempotently creates or updates the External Client App named `appName`
@@ -57,6 +60,7 @@ export async function setupExternalApp(
   const contactEmail = options.contactEmail ?? DEFAULT_CONTACT_EMAIL;
   const oauthCallbackUrl = options.oauthCallbackUrl ?? DEFAULT_OAUTH_CALLBACK_URL;
   const permissionSetName = options.permissionSetName ?? `${appName}_Preauthorized`;
+  const oauthScopes = options.oauthScopes ?? DEFAULT_OAUTH_SCOPES;
   const certificate = resolveCertificatePem(options);
 
   const appMetadata = {
@@ -77,7 +81,7 @@ export async function setupExternalApp(
     fullName: appName,
     externalClientApplication: appName,
     label,
-    commaSeparatedOauthScopes: 'Api,RefreshToken',
+    commaSeparatedOauthScopes: oauthScopes.join(','),
   };
   await upsertMetadata(connection, EXTL_CLNT_APP_OAUTH_SETTINGS, oauthPluginSettings);
 

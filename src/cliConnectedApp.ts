@@ -8,6 +8,8 @@ async function main() {
   const preAuthUsername = arg('preauth-username');
   const permissionSetName = optionalArg('permission-set');
   const contactEmail = optionalArg('contact-email');
+  // e.g. --oauth-scopes Api,RefreshToken,Web — defaults to Api,RefreshToken when omitted.
+  const oauthScopes = optionalArg('oauth-scopes')?.split(',');
   // CI-friendly: a secret manager can inject the PEM directly, skipping the filesystem.
   const certPem = process.env.SF_JWT_CERT_PEM;
   const certPath = arg(
@@ -22,6 +24,7 @@ async function main() {
         preAuthUsername,
         ...(permissionSetName ? { permissionSetName } : {}),
         ...(contactEmail ? { contactEmail } : {}),
+        ...(oauthScopes ? { oauthScopes } : {}),
         certPem,
       })
     : await setupConnectedApp(connection, {
@@ -29,6 +32,7 @@ async function main() {
         preAuthUsername,
         ...(permissionSetName ? { permissionSetName } : {}),
         ...(contactEmail ? { contactEmail } : {}),
+        ...(oauthScopes ? { oauthScopes } : {}),
         certPemPath: certPath,
       });
 

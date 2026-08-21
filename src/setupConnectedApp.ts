@@ -18,6 +18,8 @@ export type SetupConnectedAppOptions = {
   oauthCallbackUrl?: string;
   /** Defaults to `${appName}_Preauthorized`. */
   permissionSetName?: string;
+  /** Defaults to `['Api', 'RefreshToken']`. Add `'Web'` when the integration needs a web session, not just API access. */
+  oauthScopes?: string[];
 } & CertificateInput;
 
 export interface SetupConnectedAppResult {
@@ -27,6 +29,7 @@ export interface SetupConnectedAppResult {
 
 const DEFAULT_CONTACT_EMAIL = 'gabor.demeter@gforceinnovation.com';
 const DEFAULT_OAUTH_CALLBACK_URL = 'https://login.salesforce.com/services/oauth2/success';
+const DEFAULT_OAUTH_SCOPES = ['Api', 'RefreshToken'];
 
 /**
  * Idempotently creates or updates a classic Connected App named `appName`,
@@ -52,6 +55,7 @@ export async function setupConnectedApp(
   const contactEmail = options.contactEmail ?? DEFAULT_CONTACT_EMAIL;
   const oauthCallbackUrl = options.oauthCallbackUrl ?? DEFAULT_OAUTH_CALLBACK_URL;
   const permissionSetName = options.permissionSetName ?? `${appName}_Preauthorized`;
+  const oauthScopes = options.oauthScopes ?? DEFAULT_OAUTH_SCOPES;
   const certificate = resolveCertificatePem(options);
 
   // The permission set must exist before the Connected App is saved: the
@@ -73,7 +77,7 @@ export async function setupConnectedApp(
       callbackUrl: oauthCallbackUrl,
       certificate,
       isAdminApproved: true,
-      scopes: ['Api', 'RefreshToken'],
+      scopes: oauthScopes,
     },
     permissionSetName: [permissionSetName],
   };
