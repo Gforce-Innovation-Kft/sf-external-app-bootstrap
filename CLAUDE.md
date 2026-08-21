@@ -8,6 +8,14 @@ A small TypeScript CLI that bootstraps a Salesforce **External Client App** (JWT
 
 It also bootstraps a classic **Connected App** the same way, via `setupConnectedApp.ts`/`cliConnectedApp.ts`. This is a separate app type on purpose, not a duplicate: Dev Hub scratch-org creation (`sf org create scratch`) only recognizes a classic Connected App as the OAuth client — External Client Apps aren't supported for that operation. The two pipelines share their Metadata API plumbing (`metadataUpsert.ts`, `certificateInput.ts`, `ensurePreAuthPermissionSet.ts`) but are otherwise independent — each app gets its own keypair, consumer key, and pre-authorized permission set.
 
+## Skills
+
+This repo spans three distinct domains — invoke the matching skill instead of freelancing:
+
+- **Salesforce / Apex / Metadata API** (the `*App.ts` pipelines, permission sets, org auth, anything touching `@salesforce/core`) → `fullstack-dev-skills:salesforce-developer`
+- **TypeScript type design** (the `SetupExternalAppOptions`/`SetupConnectedAppOptions` option shapes, the `MetadataApiType` casts in `metadataUpsert.ts`, discriminated unions like `CertificateInput`) → `fullstack-dev-skills:typescript-pro`
+- **`.github/workflows/*.yml`** (the WIF logins, container jobs, artifact handoffs between jobs) → `ci-cd` for authoring or debugging a pipeline, `actions` for checking a run's status/logs
+
 ## Commands
 
 ```bash
