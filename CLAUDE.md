@@ -8,6 +8,15 @@ A small TypeScript CLI that bootstraps a Salesforce **External Client App** (JWT
 
 It also bootstraps a classic **Connected App** the same way, via `setupConnectedApp.ts`/`cliConnectedApp.ts`. This is a separate app type on purpose, not a duplicate: Dev Hub scratch-org creation (`sf org create scratch`) only recognizes a classic Connected App as the OAuth client — External Client Apps aren't supported for that operation. The two pipelines share their Metadata API plumbing (`metadataUpsert.ts`, `certificateInput.ts`, `ensurePreAuthPermissionSet.ts`) but are otherwise independent — each app gets its own keypair, consumer key, and pre-authorized permission set.
 
+## Google Cloud
+
+Load the `gforce-google-cloud` skill before any Google Cloud work.
+
+- Both workflows read and write Salesforce JWT secrets in `gforce-salesforce-cicd` through the pool `github-pool`. Both are shutting down (30-day undelete window).
+- New home: secrets in `gforce-shared-credentials` (`salesforce-devhub-jwt`, `salesforce-integration-jwt`, `salesforce-demo-production-jwt`); pool `github`, provider `github-actions` in `gforce-shared-platform`, via repo variable `GCP_WORKLOAD_IDENTITY_PROVIDER`.
+- Never hardcode the provider value or a project number. `gforce-google-infra` is retired.
+- The workflows still point at the old names until the switch. Checklist: [`docs/gcloud-migration.md`](docs/gcloud-migration.md).
+
 ## Skills
 
 This repo spans three distinct domains — invoke the matching skill instead of freelancing:
@@ -53,15 +62,15 @@ Independent pipelines that meet at a certificate and share a set of Metadata API
 
 `scripts/verify-login-container.sh` (wrapped by `npm run integration:test`) proves a generated keypair + consumer key actually work by running `sf org login jwt` inside a throwaway Docker container, never touching the host's `~/.sf` state. `scripts/verify-scratch-org-container.sh` (wrapped by `npm run integration:test:scratch-org`) does the same but for the Connected App specifically: logs in as Dev Hub, then actually runs `sf org create scratch` + `sf org delete scratch` against a checked-in `scripts/scratch-org-def.json` — proving the real capability, not just that login works.
 
-5. **`syncGcpSecret.ts`** — also standalone. Adds a new version to an existing `salesforce-<env>` secret in GCP Secret Manager (project `gforce-salesforce-cicd`, provisioned by the sibling `gforce-google-infra` repo) — the JSON bundle shape is `{username, client_id, instance_url, jwt_key}` (`jwt_key` is raw PEM, not base64). Never creates the secret container itself — only `secretVersionAdder`, by design (see `.github/workflows/setup-external-app.yml`'s `gcp-secrets-admin` job).
+5. **`syncGcpSecret.ts`** — also standalone. Adds a new version to an existing `salesforce-<env>` secret in GCP Secret Manager (project `gforce-salesforce-cicd` today, shutting down; target `gforce-shared-credentials`, managed in `gforce-google-cloud`) — the JSON bundle shape is `{username, client_id, instance_url, jwt_key}` (`jwt_key` is raw PEM, not base64). Never creates the secret container itself — only `secretVersionAdder`, by design (see `.github/workflows/setup-external-app.yml`'s `gcp-secrets-admin` job).
 
 ### CI: `.github/workflows/setup-external-app.yml`
 
-A `workflow_dispatch` pipeline that runs the whole bootstrap loop against a real org, end to end: log in via `shared-github-actions`' `sf-org-login` action (`credential-source: gcp`, reading the org's existing JWT credential from GCP Secret Manager over Direct Workload Identity Federation) → `generate:jwt` a fresh keypair → `setup-app` → `integration:test` → `sync:secret` to write the fresh keypair back. Three jobs, not one, because a job can only declare one GitHub `environment:` and the read (`devhub`/`integration`/`production` claim) and write (`gcp-secrets-admin` claim) steps need different WIF identities; the new private key crosses the job boundary as a 1-day-retention artifact. Needs this repo listed in `gforce-google-infra`'s WIF `trusted_repositories`, and the matching GitHub Environments + `GCP_WORKLOAD_IDENTITY_PROVIDER` repo variable already exist here.
+A `workflow_dispatch` pipeline that runs the whole bootstrap loop against a real org, end to end: log in via `shared-github-actions`' `sf-org-login` action (`credential-source: gcp`, reading the org's existing JWT credential from GCP Secret Manager over Direct Workload Identity Federation) → `generate:jwt` a fresh keypair → `setup-app` → `integration:test` → `sync:secret` to write the fresh keypair back. Three jobs, not one, because a job can only declare one GitHub `environment:` and the read (`devhub`/`integration`/`production` claim) and write (`gcp-secrets-admin` claim) steps need different WIF identities; the new private key crosses the job boundary as a 1-day-retention artifact. Needs this repo granted on the Workload Identity pool (`trusted_repositories` in the retired `gforce-google-infra` today; a `principalSet` grant in `gforce-google-cloud` after the switch), and the matching GitHub Environments + `GCP_WORKLOAD_IDENTITY_PROVIDER` repo variable already exist here.
 
 ### CI: `.github/workflows/setup-connected-app.yml`
 
-The Connected App equivalent, devhub-only (no `resolve-env` job — there's only one environment to target) and purely additive: `setup` logs into devhub using the _existing_ `salesforce-devhub` secret read-only, generates a fresh keypair under its own `--env` (`devhub-connected-app`, so it never collides with the ECA's keypair), and runs `setup-connected-app`. `verify` proves the new key can create-and-delete a real scratch org, not just log in. `sync-secret` writes the result to a **new** secret, `salesforce-devhub-connected-app` — `salesforce-devhub` is never written to. That new secret container must be provisioned once in `gforce-google-infra` before the first run (same "never creates the container" rule as `syncGcpSecret.ts` above).
+The Connected App equivalent, devhub-only (no `resolve-env` job — there's only one environment to target) and purely additive: `setup` logs into devhub using the _existing_ `salesforce-devhub` secret read-only, generates a fresh keypair under its own `--env` (`devhub-connected-app`, so it never collides with the ECA's keypair), and runs `setup-connected-app`. `verify` proves the new key can create-and-delete a real scratch org, not just log in. `sync-secret` writes the result to a **new** secret, `salesforce-devhub-connected-app` — `salesforce-devhub` is never written to. That new secret container must be provisioned once (in `gforce-google-cloud` after the switch) before the first run (same "never creates the container" rule as `syncGcpSecret.ts` above).
 
 ## Gotchas (non-obvious, has caused real failures)
 
