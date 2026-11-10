@@ -1,0 +1,31 @@
+{
+  "$comment": "Delta anchors: this skill overrides these google/skills rules. Format in standards/upstream-policy.md, schema in schemas/overrides.schema.json.",
+  "source": "google/skills",
+  "overrides": [
+    {
+      "upstream_paths": [
+        "skills/cloud/google-cloud-recipe-foundation-builder"
+      ],
+      "tripwires": [
+        "Lazy Role Remediation",
+        "Self-Remediation",
+        "add-iam-policy-binding"
+      ],
+      "gforce_rule": "Administrative roles are granted only through Terraform, applied by Gabor",
+      "reason": "The recipe grants itself organization and billing admin roles when a step fails; GForce changes IAM only through a reviewed Terraform plan",
+      "delta": "SKILL.md hard stops: never change Shared or Production yourself"
+    },
+    {
+      "upstream_paths": [
+        "skills/cloud/google-cloud-recipe-foundation-builder"
+      ],
+      "tripwires": [
+        "Non-Production",
+        "Development"
+      ],
+      "gforce_rule": "Folders are Shared, Playground and Production with four named projects",
+      "reason": "A one-person company needs two environments, not three; the GForce map is in the gforce-google-cloud spec",
+      "delta": "SKILL.md: The map"
+    }
+  ]
+}

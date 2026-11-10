@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "skills": {
+    "gforce-google-cloud": {
+      "source": "Gforce-Innovation-Kft/gforce-ai",
+      "sourceType": "github",
+      "skillPath": "skills/gforce-google-cloud/SKILL.md",
+      "computedHash": "15c8395eba34ff1e9d0aa42ea2f1de50b60a0e148f0324f91c23da33576e936b"
+    }
+  }
+}
